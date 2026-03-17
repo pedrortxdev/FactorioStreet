@@ -7,7 +7,7 @@ const TILE_SIZE: f32 = 64.0;
 fn main() {
     App::new()
         .add_plugins(DefaultPlugins.set(ImagePlugin::default_nearest())) // Mantém o pixel art nítido
-        .insert_resource(ClearColor(Color::rgb(0.05, 0.05, 0.1)))      // Fundo "Deep Space/Industrial"
+        .insert_resource(ClearColor(Color::srgb(0.05, 0.05, 0.1)))      // Fundo "Deep Space/Industrial"
         .add_systems(Startup, setup)
         .add_systems(Update, (camera_movement, handle_input, update_cursor))
         .run();
@@ -21,16 +21,13 @@ struct FactoryTile;
 
 fn setup(mut commands: Commands) {
     // Câmera 2D básica
-    commands.spawn(Camera2dBundle::default());
+    commands.spawn(Camera2d::default());
 
     // Cursor visual para o "Snap-to-Grid"
     commands.spawn((
-        SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgba(1.0, 1.0, 1.0, 0.1), // Sombra branca transparente
-                custom_size: Some(Vec2::splat(TILE_SIZE)),
-                ..default()
-            },
+        Sprite {
+            color: Color::srgba(1.0, 1.0, 1.0, 0.1), // Sombra branca transparente
+            custom_size: Some(Vec2::splat(TILE_SIZE)),
             ..default()
         },
         GridCursor,
@@ -42,13 +39,13 @@ fn update_cursor(
     camera_query: Query<(&Camera, &GlobalTransform)>,
     mut cursor_query: Query<&mut Transform, With<GridCursor>>,
 ) {
-    let window = window_query.single();
-    let (camera, camera_transform) = camera_query.single();
+    let Ok(window) = window_query.single() else { return; };
+    let Ok((camera, camera_transform)) = camera_query.single() else { return; };
 
     if let Some(world_position) = window.cursor_position()
-        .and_then(|cursor| camera.viewport_to_world_2d(camera_transform, cursor))
+        .and_then(|cursor| camera.viewport_to_world_2d(camera_transform, cursor).ok())
     {
-        let mut transform = cursor_query.single_mut();
+        let Ok(mut transform) = cursor_query.single_mut() else { return; };
         // A mágica do grid: arredonda a posição do mouse para múltiplos de 64
         transform.translation.x = (world_position.x / TILE_SIZE).round() * TILE_SIZE;
         transform.translation.y = (world_position.y / TILE_SIZE).round() * TILE_SIZE;
@@ -61,19 +58,16 @@ fn handle_input(
     cursor_query: Query<&Transform, With<GridCursor>>,
 ) {
     if mouse_input.just_pressed(MouseButton::Left) {
-        let cursor_transform = cursor_query.single();
+        let Ok(cursor_transform) = cursor_query.single() else { return; };
         
         // Spawn de um tile temporário (depois substituímos pelo seu sprite)
         commands.spawn((
-            SpriteBundle {
-                sprite: Sprite {
-                    color: Color::rgb(0.2, 0.5, 0.8), // Azul "Construção"
-                    custom_size: Some(Vec2::splat(TILE_SIZE - 2.0)), // Margem pequena pra ver o grid
-                    ..default()
-                },
-                transform: *cursor_transform,
+            Sprite {
+                color: Color::srgb(0.2, 0.5, 0.8), // Azul "Construção"
+                custom_size: Some(Vec2::splat(TILE_SIZE - 2.0)), // Margem pequena pra ver o grid
                 ..default()
             },
+            *cursor_transform,
             FactoryTile,
         ));
         println!("Tile colocado em: {:?}", cursor_transform.translation);
@@ -86,12 +80,12 @@ fn camera_movement(
     mut camera_query: Query<&mut Transform, With<Camera>>,
     time: Res<Time>,
 ) {
-    let mut transform = camera_query.single_mut();
+    let Ok(mut transform) = camera_query.single_mut() else { return; };
     let speed = 500.0;
     let direction = Vec3::new(
         if keyboard_input.pressed(KeyCode::KeyD) { 1.0 } else if keyboard_input.pressed(KeyCode::KeyA) { -1.0 } else { 0.0 },
         if keyboard_input.pressed(KeyCode::KeyW) { 1.0 } else if keyboard_input.pressed(KeyCode::KeyS) { -1.0 } else { 0.0 },
         0.0,
     );
-    transform.translation += direction.normalize_or_zero() * speed * time.delta_seconds();
+    transform.translation += direction.normalize_or_zero() * speed * time.delta_secs();
 }
