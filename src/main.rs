@@ -4,6 +4,7 @@ mod terrain;
 mod simulation;
 mod render;
 mod network;
+mod sprites;
 
 use macroquad::prelude::*;
 use constants::*;
@@ -115,6 +116,7 @@ fn generate_resources(forge: &crate::types::crystal_forge::Generator, time: f32)
         uranium: forge.generate_texture(Terrain::Uranium, time),
         wasteland: forge.generate_texture(Terrain::Wasteland, time),
         transitions: std::collections::HashMap::new(),
+        sprites: sprites::SpriteBank::load(),
     }
 }
 

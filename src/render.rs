@@ -390,7 +390,19 @@ pub fn render_game(state: &mut GameState, time: f64) {
                 let fy = cy as f32+0.5+dy as f32*(item.progress-0.5);
                 let sx = fx*CELL_SIZE*cam.scale+cam.x; let sy = fy*CELL_SIZE*cam.scale+cam.y;
                 let sz = CELL_SIZE*0.35*cam.scale;
-                draw_rectangle(sx-sz/2.0,sy-sz/2.0,sz,sz,item.item_type.color());
+                // Draw item sprite if available, else fall back to colored rectangle
+                let drawn = if let Some(ref texs) = state.textures {
+                    if let Some(tex) = texs.sprites.items.get(&item.item_type) {
+                        draw_texture_ex(tex, sx-sz/2.0, sy-sz/2.0, WHITE, DrawTextureParams {
+                            dest_size: Some(vec2(sz, sz)),
+                            ..Default::default()
+                        });
+                        true
+                    } else { false }
+                } else { false };
+                if !drawn {
+                    draw_rectangle(sx-sz/2.0, sy-sz/2.0, sz, sz, item.item_type.color());
+                }
             }}
         }
     }
@@ -523,7 +535,30 @@ pub fn render_ui(state: &GameState, hover_info: &Option<HoverInfo>, mouse_x: f32
         draw_rectangle(tx, ty, tw, th, if sel { Color::new(0.18,0.22,0.32,1.0) } else { hud_bg2 });
         draw_rectangle_lines(tx, ty, tw, th, if sel { 2.0 } else { 1.0 }, if sel { Color::new(0.22,0.74,0.97,1.0) } else { hud_border });
         draw_text(tool.hotkey(), tx+4.0, ty+16.0, 14.0, Color::new(0.58,0.64,0.70,1.0));
-        draw_text(tool.name_pt(), tx+4.0, ty+34.0, 16.0, if sel { Color::new(0.22,0.74,0.97,1.0) } else { WHITE });
+        // Draw HUD sprite if available, else show text name
+        let sprite_drawn = if let Some(ref texs) = state.textures {
+            if let Some(sprite) = texs.sprites.hud.get(tool) {
+                // Draw sprite: centered horizontally, below the hotkey label
+                let spad = 4.0;
+                let avail_w = tw - spad * 2.0;
+                let avail_h = th - 20.0 - spad; // below hotkey text
+                let sprite_size = avail_w.min(avail_h);
+                let sx = tx + (tw - sprite_size) / 2.0;
+                let sy = ty + 18.0;
+                draw_texture_ex(sprite, sx, sy, WHITE, DrawTextureParams {
+                    dest_size: Some(vec2(sprite_size, sprite_size)),
+                    ..Default::default()
+                });
+                true
+            } else { false }
+        } else { false };
+        if !sprite_drawn {
+            draw_text(tool.name_pt(), tx+4.0, ty+34.0, 16.0, if sel { Color::new(0.22,0.74,0.97,1.0) } else { WHITE });
+        }
+        if sel {
+            // Highlight border glow when selected and sprite shown
+            draw_rectangle_lines(tx+1.0, ty+1.0, tw-2.0, th-2.0, 1.0, Color::new(0.22,0.74,0.97,0.4));
+        }
         if !matches!(tool, Tool::Eraser|Tool::Repair) { draw_text(&format!("-${}",tool.cost()), tx+4.0, ty+52.0, 14.0, Color::new(0.94,0.27,0.27,0.9)); }
     }
 

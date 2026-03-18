@@ -1,6 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use crate::constants::*;
 use crate::network::NpcInfo;
+use crate::sprites::SpriteBank;
 use macroquad::prelude::{Texture2D, Vec2, vec2};
 use serde::{Serialize, Deserialize};
 
@@ -193,6 +194,7 @@ pub struct Resources {
     pub uranium: Texture2D,
     pub wasteland: Texture2D,
     pub transitions: HashMap<(Terrain, Terrain, u8), Texture2D>,
+    pub sprites: SpriteBank,
 }
 
 impl GameState {
