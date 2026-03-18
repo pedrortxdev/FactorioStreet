@@ -264,13 +264,16 @@ impl Terrain {
         }
     }
 
-    pub fn ore_type(&self) -> Option<ItemType> {
+    pub fn priority(&self) -> i32 {
         match self {
-            Terrain::Iron => Some(ItemType::IronOre), Terrain::Copper => Some(ItemType::CopperOre),
-            Terrain::Coal => Some(ItemType::CoalOre), Terrain::Quartz => Some(ItemType::QuartzOre),
-            Terrain::Sand => Some(ItemType::SandOre), Terrain::Gold => Some(ItemType::GoldOre),
-            Terrain::Uranium => Some(ItemType::UraniumOre),
-            _ => None,
+            Terrain::Water => 10,
+            Terrain::Oil => 9,
+            Terrain::Uranium => 8,
+            Terrain::Iron | Terrain::Copper | Terrain::Coal | Terrain::Quartz | Terrain::Gold => 7,
+            Terrain::Tree => 6,
+            Terrain::Sand => 5,
+            Terrain::Empty => 4, // Grass/Empty
+            _ => 0,
         }
     }
 }

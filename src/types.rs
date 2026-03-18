@@ -192,6 +192,7 @@ pub struct Resources {
     pub oil: Texture2D,
     pub uranium: Texture2D,
     pub wasteland: Texture2D,
+    pub transitions: HashMap<(Terrain, Terrain, u8), Texture2D>,
 }
 
 impl GameState {

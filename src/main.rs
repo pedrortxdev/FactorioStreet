@@ -114,6 +114,7 @@ fn generate_resources(forge: &crate::types::crystal_forge::Generator, time: f32)
         oil: forge.generate_texture(Terrain::Oil, time),
         uranium: forge.generate_texture(Terrain::Uranium, time),
         wasteland: forge.generate_texture(Terrain::Wasteland, time),
+        transitions: std::collections::HashMap::new(),
     }
 }
 
@@ -473,7 +474,7 @@ async fn main() {
                     }
                 }
 
-                render_game(&state, time * 1000.0);
+                render_game(&mut state);
                 let hover = get_hover_info(&state);
                 render_ui(&state, &hover, mx, my);
                 

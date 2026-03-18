@@ -220,7 +220,7 @@ fn draw_npc(x: f32, y: f32, cam_scale: f32, name: &str, state_str: &str) {
     draw_text(&label, x - 28.0, y - size * 0.8, 12.0 * cam_scale.max(0.8), color);
 }
 
-pub fn render_game(state: &GameState, time: f64) {
+pub fn render_game(state: &mut GameState) {
     clear_background(Color::new(0.01, 0.02, 0.04, 1.0));
     let cam = &state.camera;
     let inv_scale = 1.0 / cam.scale;
@@ -257,12 +257,50 @@ pub fn render_game(state: &GameState, time: f64) {
             let mut tint = WHITE;
             if t == Terrain::Empty { tint = Color::new(0.7, 0.8, 0.7, 1.0); } // Grass filter (darker/greener)
 
-            // Use a small overlap (0.8px) to prevent gaps between tiles
+            // Draw base texture
             let overlap = 0.8;
             draw_texture_ex(tex, wx - overlap, wy - overlap, tint, DrawTextureParams {
                 dest_size: Some(vec2(ws + overlap * 2.0, ws + overlap * 2.0)),
                 ..Default::default()
             });
+
+            // --- Blending / Degradê Logic ---
+            let p = t.priority();
+            // Check neighbors (North, East, South, West)
+            let neighbors = [
+                (0, -1, 0), // North
+                (1, 0, 1),  // East
+                (0, 1, 2),  // South
+                (-1, 0, 3), // West
+            ];
+
+            for (di, dj, side) in neighbors {
+                let nc = (c as i32 + di).clamp(0, GRID_SIZE as i32 - 1) as usize;
+                let nr = (r as i32 + dj).clamp(0, GRID_SIZE as i32 - 1) as usize;
+                let nt = state.terrain[nr * GRID_SIZE + nc];
+
+                if nt.priority() > p {
+                    // This neighbor should bleed into current tile
+                    let key = (t, nt, side);
+                    
+                    // We need to access textures mutably to check the cache
+                    if let Some(texs) = &mut state.textures {
+                        let blend_tex = if let Some(cached) = texs.transitions.get(&key) {
+                            cached
+                        } else {
+                            // Generate and cache
+                            let new_tex = state.forge.generate_blend_overlay(t, nt, side);
+                            texs.transitions.insert(key, new_tex);
+                            texs.transitions.get(&key).unwrap()
+                        };
+
+                        draw_texture_ex(blend_tex, wx - overlap, wy - overlap, WHITE, DrawTextureParams {
+                            dest_size: Some(vec2(ws + overlap * 2.0, ws + overlap * 2.0)),
+                            ..Default::default()
+                        });
+                    }
+                }
+            }
 
             if t == Terrain::Wasteland {
                 draw_rectangle(wx, wy, ws, ws, Color::new(0.52, 0.80, 0.10, 0.4));
