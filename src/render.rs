@@ -220,7 +220,7 @@ fn draw_npc(x: f32, y: f32, cam_scale: f32, name: &str, state_str: &str) {
     draw_text(&label, x - 28.0, y - size * 0.8, 12.0 * cam_scale.max(0.8), color);
 }
 
-pub fn render_game(state: &mut GameState) {
+pub fn render_game(state: &mut GameState, time: f64) {
     clear_background(Color::new(0.01, 0.02, 0.04, 1.0));
     let cam = &state.camera;
     let inv_scale = 1.0 / cam.scale;

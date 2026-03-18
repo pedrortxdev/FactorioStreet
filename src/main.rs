@@ -474,7 +474,7 @@ async fn main() {
                     }
                 }
 
-                render_game(&mut state);
+                render_game(&mut state, get_time() * 1000.0);
                 let hover = get_hover_info(&state);
                 render_ui(&state, &hover, mx, my);
                 
