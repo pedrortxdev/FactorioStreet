@@ -1,4 +1,4 @@
-use crate::constants::Terrain;
+use crate::types::Terrain;
 use macroquad::prelude::*;
 
 pub const TILE_SIZE: usize = 128;
@@ -7,6 +7,10 @@ pub const P: usize = 4; // Pixel size for the "Atomic" look
 #[derive(Clone, Copy)]
 pub struct Generator {
     pub seed: f32,
+}
+
+impl Default for Generator {
+    fn default() -> Self { Generator::new(0.0) }
 }
 
 impl Generator {

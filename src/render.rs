@@ -16,17 +16,91 @@ fn terrain_color(t: Terrain, time: f64) -> Color {
         Terrain::Oil => Color::new(0.03, 0.03, 0.03, 1.0),
         Terrain::Uranium => Color::new(0.08, 0.33, 0.18, 1.0),
         Terrain::Wasteland => Color::new(0.25, 0.38, 0.07, 1.0),
+        Terrain::Mountain => Color::new(0.3, 0.3, 0.35, 1.0),
     }
 }
 
-fn draw_building(wx: f32, wy: f32, ws: f32, cell: &Cell, on: bool, cam_scale: f32, _time: f64) {
+fn draw_building(wx: f32, wy: f32, ws: f32, cell: &Cell, on: bool, cam_scale: f32, time: f64, grid: &[Option<Cell>], c: i32, r: i32) {
     match cell.tool {
-        Tool::Conveyor => {
-            draw_rectangle(wx, wy, ws, ws, Color::new(0.20, 0.25, 0.33, 1.0));
-            // Big arrow
-            let cx = wx + ws * 0.5; let cy = wy + ws * 0.5;
-            let (dx, dy, txt) = match cell.dir { 0 => (0.0,-0.3,"^"), 1 => (0.3,0.0,">"), 2 => (0.0,0.3,"v"), _ => (-0.3,0.0,"<") };
-            draw_text(txt, cx + ws * dx - ws * 0.12, cy + ws * dy + ws * 0.1, 22.0 * cam_scale, Color::new(0.58, 0.64, 0.70, 1.0));
+        Tool::ConveyorIron => {
+            let belt_bg = Color::new(0.18, 0.20, 0.25, 1.0);
+            let rail_col = Color::new(0.60, 0.35, 0.15, 1.0);
+            let rust_dark = Color::new(0.35, 0.18, 0.08, 1.0);
+            let link_col = Color::new(0.25, 0.28, 0.35, 1.0);
+            
+            let is_curve = cell.render_type != 0;
+            let in_dir = match cell.render_type {
+                1 => (cell.dir + 3) % 4, // Curve L
+                2 => (cell.dir + 1) % 4, // Curve R
+                _ => cell.dir,
+            };
+
+            draw_rectangle(wx, wy, ws, ws, belt_bg);
+
+            if !is_curve {
+                let rail_w = ws * 0.12;
+                if cell.dir == 0 || cell.dir == 2 {
+                    draw_rectangle(wx, wy, rail_w, ws, rail_col);
+                    draw_rectangle(wx + ws - rail_w, wy, rail_w, ws, rail_col);
+                    for i in 0..4 {
+                        let sy = wy + (i as f32 * 0.25) * ws;
+                        draw_rectangle(wx, sy, rail_w, ws * 0.08, rust_dark);
+                        draw_rectangle(wx + ws - rail_w, sy + ws * 0.1, rail_w, ws * 0.08, rust_dark);
+                    }
+                } else {
+                    draw_rectangle(wx, wy, ws, rail_w, rail_col);
+                    draw_rectangle(wx, wy + ws - rail_w, ws, rail_w, rail_col);
+                    for i in 0..4 {
+                        let sx = wx + (i as f32 * 0.25) * ws;
+                        draw_rectangle(sx, wy, ws * 0.08, rail_w, rust_dark);
+                        draw_rectangle(sx + ws * 0.1, wy + ws - rail_w, ws * 0.08, rail_w, rust_dark);
+                    }
+                }
+
+                let time_offset = (time as f32 * 0.005) % 1.0;
+                let link_count = 6;
+                for i in -1..link_count {
+                    let progress = (i as f32 + time_offset) / link_count as f32;
+                    match cell.dir {
+                        0 | 2 => {
+                            let y = wy + (if cell.dir == 0 { 1.0 - progress } else { progress }) * ws;
+                            draw_line(wx + rail_w, y, wx + ws - rail_w, y, 1.5 * cam_scale, link_col);
+                        }
+                        _ => {
+                            let x = wx + (if cell.dir == 1 { progress } else { 1.0 - progress }) * ws;
+                            draw_line(x, wy + rail_w, x, wy + ws - rail_w, 1.5 * cam_scale, link_col);
+                        }
+                    }
+                }
+            } else {
+                let rail_w = ws * 0.12;
+                let time_offset = (time as f32 * 0.005) % 1.0;
+                let (px, py, start_angle) = match (in_dir, cell.dir) {
+                    (1, 0) | (2, 3) => (wx, wy, 0.0),
+                    (3, 0) | (2, 1) => (wx + ws, wy, 90.0),
+                    (1, 2) | (0, 3) => (wx, wy + ws, 270.0),
+                    (3, 2) | (0, 1) => (wx + ws, wy + ws, 180.0),
+                    _ => (wx, wy, 0.0),
+                };
+
+                let steps = 12;
+                for i in 0..steps {
+                    let a1 = (start_angle + (i as f32 / steps as f32) * 90.0).to_radians();
+                    let a2 = (start_angle + ((i+1) as f32 / steps as f32) * 90.0).to_radians();
+                    let r_out = ws; 
+                    draw_line(px + a1.cos()*r_out, py + a1.sin()*r_out, px + a2.cos()*r_out, py + a2.sin()*r_out, 3.0*cam_scale, rail_col);
+                    let r_in = rail_w;
+                    draw_line(px + a1.cos()*r_in, py + a1.sin()*r_in, px + a2.cos()*r_in, py + a2.sin()*r_in, 3.0*cam_scale, rail_col);
+                }
+
+                let link_count = 6;
+                for i in -1..link_count {
+                    let progress = (i as f32 + time_offset) / link_count as f32;
+                    let angle = (start_angle + progress * 90.0).to_radians();
+                    let r_inner = rail_w; let r_outer = ws - rail_w;
+                    draw_line(px + angle.cos()*r_inner, py + angle.sin()*r_inner, px + angle.cos()*r_outer, py + angle.sin()*r_outer, 1.5*cam_scale, link_col);
+                }
+            }
         }
         Tool::Street => {
             draw_rectangle(wx, wy, ws, ws, Color::new(0.15, 0.18, 0.22, 1.0));
@@ -34,19 +108,14 @@ fn draw_building(wx: f32, wy: f32, ws: f32, cell: &Cell, on: bool, cam_scale: f3
             draw_line(wx + ws * 0.5, wy, wx + ws * 0.5, wy + ws, 2.0, Color::new(0.39, 0.45, 0.52, 0.6));
         }
         Tool::Pipe => {
-            draw_rectangle(wx + ws * 0.3, wy + ws * 0.3, ws * 0.4, ws * 0.4, Color::new(0.28, 0.33, 0.42, 1.0));
-            for d in 0..4 {
-                let (ddx, ddy) = DIRS[d];
-                let _nc = ((wx - 1.0) / ws) as i32 + ddx; // approximate
-                let _nr = ((wy - 1.0) / ws) as i32 + ddy;
-                // Just draw all 4 pipe stubs for simplicity
-                match d {
-                    0 => draw_rectangle(wx + ws * 0.4, wy, ws * 0.2, ws * 0.4, Color::new(0.28, 0.33, 0.42, 0.5)),
-                    1 => draw_rectangle(wx + ws * 0.6, wy + ws * 0.4, ws * 0.4, ws * 0.2, Color::new(0.28, 0.33, 0.42, 0.5)),
-                    2 => draw_rectangle(wx + ws * 0.4, wy + ws * 0.6, ws * 0.2, ws * 0.4, Color::new(0.28, 0.33, 0.42, 0.5)),
-                    _ => draw_rectangle(wx, wy + ws * 0.4, ws * 0.4, ws * 0.2, Color::new(0.28, 0.33, 0.42, 0.5)),
-                }
-            }
+            let p_col = Color::new(0.28, 0.33, 0.42, 1.0);
+            draw_rectangle(wx + ws * 0.3, wy + ws * 0.3, ws * 0.4, ws * 0.4, p_col);
+            let mask = cell.render_type;
+            if mask & 1 != 0 { draw_rectangle(wx + ws * 0.35, wy, ws * 0.3, ws * 0.3, p_col); }
+            if mask & 2 != 0 { draw_rectangle(wx + ws * 0.7, wy + ws * 0.35, ws * 0.3, ws * 0.3, p_col); }
+            if mask & 4 != 0 { draw_rectangle(wx + ws * 0.35, wy + ws * 0.7, ws * 0.3, ws * 0.3, p_col); }
+            if mask & 8 != 0 { draw_rectangle(wx, wy + ws * 0.35, ws * 0.3, ws * 0.3, p_col); }
+            
             if cell.fluid_amount > 0.0 {
                 let fc = if cell.fluid_type == Some(FluidType::Water) { Color::new(0.22, 0.74, 0.97, 0.9) } else { Color::new(0.1, 0.1, 0.1, 0.9) };
                 draw_circle(wx + ws * 0.5, wy + ws * 0.5, ws * 0.12, fc);
@@ -77,7 +146,6 @@ fn draw_building(wx: f32, wy: f32, ws: f32, cell: &Cell, on: bool, cam_scale: f3
         }
         Tool::CoalPlant => {
             draw_rectangle(wx + ws * 0.05, wy + ws * 0.05, ws * 0.9, ws * 0.9, Color::new(0.20, 0.25, 0.33, 1.0));
-            // Chimney
             draw_rectangle(wx + ws * 0.65, wy + ws * 0.05, ws * 0.2, ws * 0.45, Color::new(0.30, 0.35, 0.40, 1.0));
             if cell.fuel > 0.0 { draw_rectangle(wx + ws * 0.2, wy + ws * 0.6, ws * 0.3, ws * 0.15, Color::new(0.98, 0.45, 0.09, 1.0)); }
             draw_text("C", wx + ws * 0.3, wy + ws * 0.5, 14.0 * cam_scale, Color::new(0.7, 0.7, 0.7, 0.8));
@@ -93,7 +161,7 @@ fn draw_building(wx: f32, wy: f32, ws: f32, cell: &Cell, on: bool, cam_scale: f3
         }
         Tool::Wind => {
             draw_circle(wx + ws * 0.5, wy + ws * 0.5, ws * 0.18, Color::new(0.58, 0.64, 0.70, 1.0));
-            let angle = (_time / 100.0) as f32;
+            let angle = (time / 100.0) as f32;
             for b in 0..3 {
                 let a = angle + b as f32 * std::f32::consts::TAU / 3.0;
                 draw_line(wx + ws * 0.5, wy + ws * 0.5, wx + ws * 0.5 + a.cos() * ws * 0.4, wy + ws * 0.5 + a.sin() * ws * 0.4, 3.0 * cam_scale, Color::new(0.90, 0.92, 0.95, 0.9));
@@ -184,23 +252,31 @@ fn draw_building(wx: f32, wy: f32, ws: f32, cell: &Cell, on: bool, cam_scale: f3
 }
 
 fn draw_player(x: f32, y: f32, cam_scale: f32, is_local: bool, name: &str) {
-    let size = 20.0 * cam_scale;
+    let size = 22.0 * cam_scale;
     let color = if is_local { Color::new(0.22, 0.74, 0.97, 1.0) } else { Color::new(0.94, 0.27, 0.27, 1.0) };
-    let body_r = size * 0.55;
-    // Shadow
-    draw_circle(x, y + body_r * 0.5, body_r * 0.8, Color::new(0.0, 0.0, 0.0, 0.25));
-    // Body
-    draw_circle(x, y, body_r, color);
-    // Inner ring
-    draw_circle(x, y, body_r * 0.5, Color::new(1.0, 1.0, 1.0, 0.25));
-    // Head nub
-    draw_circle(x, y - body_r * 0.7, body_r * 0.35, WHITE);
-    // Nameplate background
-    let label_w = name.len() as f32 * 7.0 + 8.0;
-    let label_x = x - label_w / 2.0;
-    let label_y = y - body_r * 1.8;
-    draw_rectangle(label_x - 2.0, label_y - 13.0, label_w, 16.0, Color::new(0.0, 0.0, 0.0, 0.55));
-    draw_text(name, label_x, label_y, 13.0, if is_local { Color::new(0.5, 1.0, 0.95, 1.0) } else { WHITE });
+    let secondary = if is_local { Color::new(0.05, 0.35, 0.60, 1.0) } else { Color::new(0.6, 0.1, 0.1, 1.0) };
+    
+    // Body (Main Chassis)
+    draw_rectangle(x - size * 0.4, y - size * 0.2, size * 0.8, size * 0.7, secondary);
+    draw_rectangle_lines(x - size * 0.4, y - size * 0.2, size * 0.8, size * 0.7, 2.0 * cam_scale, color);
+    
+    // Shoulder joints
+    draw_circle(x - size * 0.45, y + size * 0.1, size * 0.15, color);
+    draw_circle(x + size * 0.45, y + size * 0.1, size * 0.15, color);
+    
+    // Head unit
+    let head_y = y - size * 0.45;
+    draw_circle(x, head_y, size * 0.25, color);
+    
+    // Glowing visor/eyes
+    let eye_w = size * 0.1;
+    draw_rectangle(x - eye_w * 1.5, head_y - eye_w * 0.5, eye_w * 3.0, eye_w, WHITE);
+    
+    // Name tag with cleaner positioning
+    let font_size = 13.0 * cam_scale;
+    let text_w = name.len() as f32 * font_size * 0.45;
+    draw_rectangle(x - text_w * 0.5 - 4.0, y - size * 1.05, text_w + 8.0, font_size + 4.0, Color::new(0.0, 0.0, 0.0, 0.6));
+    draw_text(name, x - text_w * 0.5, y - size * 0.75, font_size, if is_local { Color::new(0.5, 1.0, 0.95, 1.0) } else { WHITE });
 }
 
 fn draw_npc(x: f32, y: f32, cam_scale: f32, name: &str, state_str: &str) {
@@ -223,228 +299,175 @@ fn draw_npc(x: f32, y: f32, cam_scale: f32, name: &str, state_str: &str) {
 pub fn render_game(state: &mut GameState, time: f64) {
     clear_background(Color::new(0.01, 0.02, 0.04, 1.0));
     let cam = &state.camera;
-    let inv_scale = 1.0 / cam.scale;
-    let vl = -cam.x * inv_scale; let vt = -cam.y * inv_scale;
-    let vr = vl + screen_width() * inv_scale; let vb = vt + screen_height() * inv_scale;
-    let sc = ((vl / CELL_SIZE).floor() as i32 - 1).max(0) as usize;
-    let sr = ((vt / CELL_SIZE).floor() as i32 - 1).max(0) as usize;
-    let ec = ((vr / CELL_SIZE).ceil() as i32 + 1).min(GRID_SIZE as i32) as usize;
-    let er = ((vb / CELL_SIZE).ceil() as i32 + 1).min(GRID_SIZE as i32) as usize;
+    let sw = screen_width();
+    let sh = screen_height();
+    let ws = CELL_SIZE * cam.scale;
 
-    // Terrain
-    for r in sr..er { for c in sc..ec {
-        let wx = c as f32 * CELL_SIZE * cam.scale + cam.x;
-        let wy = r as f32 * CELL_SIZE * cam.scale + cam.y;
-        let ws = CELL_SIZE * cam.scale;
-        let t = state.terrain[r * GRID_SIZE + c];
-        
-        if let Some(ref texs) = state.textures {
-            let tex = match t {
-                Terrain::Empty => &texs.grass,
-                Terrain::Water => &texs.water,
-                Terrain::Tree => &texs.tree,
-                Terrain::Sand => &texs.sand,
-                Terrain::Iron => &texs.iron,
-                Terrain::Copper => &texs.copper,
-                Terrain::Coal => &texs.coal,
-                Terrain::Quartz => &texs.quartz,
-                Terrain::Gold => &texs.gold,
-                Terrain::Oil => &texs.oil,
-                Terrain::Uranium => &texs.uranium,
-                Terrain::Wasteland => &texs.wasteland,
-            };
+    // Calculate visible sectors
+    // We want to see tiles from (-sw/2)/scale, (-sh/2)/scale to (+sw/2)/scale, (+sh/2)/scale relative to camera center
+    let half_w = (sw / 2.0) / cam.scale;
+    let half_h = (sh / 2.0) / cam.scale;
 
-            let mut tint = WHITE;
-            if t == Terrain::Empty { tint = Color::new(0.7, 0.8, 0.7, 1.0); } // Grass filter (darker/greener)
+    let start_gx = ((cam.gx as f32 * CELL_SIZE + cam.ox - half_w) / CELL_SIZE).floor() as i32 - 1;
+    let start_gy = ((cam.gy as f32 * CELL_SIZE + cam.oy - half_h) / CELL_SIZE).floor() as i32 - 1;
+    let end_gx = ((cam.gx as f32 * CELL_SIZE + cam.ox + half_w) / CELL_SIZE).ceil() as i32 + 1;
+    let end_gy = ((cam.gy as f32 * CELL_SIZE + cam.oy + half_h) / CELL_SIZE).ceil() as i32 + 1;
 
-            // Draw base texture
-            let overlap = 0.8;
-            draw_texture_ex(tex, wx - overlap, wy - overlap, tint, DrawTextureParams {
-                dest_size: Some(vec2(ws + overlap * 2.0, ws + overlap * 2.0)),
-                ..Default::default()
-            });
+    let (start_s, _) = GameState::world_to_sector(start_gx, start_gy);
+    let (end_s, _) = GameState::world_to_sector(end_gx, end_gy);
 
-            // --- Blending / Degradê Logic ---
-            let p = t.priority();
-            // Check neighbors (North, East, South, West)
-            let neighbors = [
-                (0, -1, 0), // North
-                (1, 0, 1),  // East
-                (0, 1, 2),  // South
-                (-1, 0, 3), // West
-            ];
+    let cam_wx = cam.gx as f32 * CELL_SIZE + cam.ox;
+    let cam_wy = cam.gy as f32 * CELL_SIZE + cam.oy;
 
-            for (di, dj, side) in neighbors {
-                let nc = (c as i32 + di).clamp(0, GRID_SIZE as i32 - 1) as usize;
-                let nr = (r as i32 + dj).clamp(0, GRID_SIZE as i32 - 1) as usize;
-                let nt = state.terrain[nr * GRID_SIZE + nc];
+    for sy in start_s.1..=end_s.1 {
+        for sx in start_s.0..=end_s.0 {
+            let handle = if let Some(&h) = state.sectors.get(&(sx, sy)) { h } else { continue; };
+            let sector = &state.pool[handle];
+            
+            // Tight loops: only iterate tiles that are actually on screen
+            let lx_start = ((start_gx - sx * SECTOR_SIZE as i32).max(0)) as usize;
+            let lx_end   = ((end_gx   - sx * SECTOR_SIZE as i32 + 1).min(SECTOR_SIZE as i32)) as usize;
+            let ly_start = ((start_gy - sy * SECTOR_SIZE as i32).max(0)) as usize;
+            let ly_end   = ((end_gy   - sy * SECTOR_SIZE as i32 + 1).min(SECTOR_SIZE as i32)) as usize;
+            let lx_end = lx_end.min(SECTOR_SIZE);
+            let ly_end = ly_end.min(SECTOR_SIZE);
 
-                if nt.priority() > p {
-                    // This neighbor should bleed into current tile
-                    let key = (t, nt, side);
-                    
-                    // We need to access textures mutably to check the cache
-                    if let Some(texs) = &mut state.textures {
-                        let blend_tex = if let Some(cached) = texs.transitions.get(&key) {
-                            cached
-                        } else {
-                            // Generate and cache
-                            let new_tex = state.forge.generate_blend_overlay(t, nt, side);
-                            texs.transitions.insert(key, new_tex);
-                            texs.transitions.get(&key).unwrap()
+            for ly in ly_start..ly_end {
+                for lx in lx_start..lx_end {
+                    let gx = sx * SECTOR_SIZE as i32 + lx as i32;
+                    let gy = sy * SECTOR_SIZE as i32 + ly as i32;
+
+                    let rel_x = (gx - cam.gx) as f32 * CELL_SIZE - cam.ox;
+                    let rel_y = (gy - cam.gy) as f32 * CELL_SIZE - cam.oy;
+                    let wx = sw / 2.0 + rel_x * cam.scale;
+                    let wy = sh / 2.0 + rel_y * cam.scale;
+
+                    let idx = ly * SECTOR_SIZE + lx;
+
+                    // 1. Draw Terrain
+                    if let Some(ref texs) = state.textures {
+                        let tex = match sector.terrain[idx] {
+                            Terrain::Empty    => &texs.grass,
+                            Terrain::Water    => &texs.water,
+                            Terrain::Tree     => &texs.tree,
+                            Terrain::Sand     => &texs.sand,
+                            Terrain::Iron     => &texs.iron,
+                            Terrain::Copper   => &texs.copper,
+                            Terrain::Coal     => &texs.coal,
+                            Terrain::Quartz   => &texs.quartz,
+                            Terrain::Gold     => &texs.gold,
+                            Terrain::Uranium  => &texs.uranium,
+                            Terrain::Oil      => &texs.oil,
+                            Terrain::Wasteland=> &texs.wasteland,
+                            Terrain::Mountain => &texs.mountain,
                         };
-
-                        draw_texture_ex(blend_tex, wx - overlap, wy - overlap, WHITE, DrawTextureParams {
+                        let overlap = 0.8 * cam.scale;
+                        draw_texture_ex(tex, wx - overlap, wy - overlap, WHITE, DrawTextureParams {
                             dest_size: Some(vec2(ws + overlap * 2.0, ws + overlap * 2.0)),
                             ..Default::default()
                         });
+                    } else {
+                        draw_rectangle(wx, wy, ws, ws, terrain_color(sector.terrain[idx], time));
+                    }
+
+                    // 2. Draw Building
+                    if let Some(cell) = &sector.grid[idx] {
+                        let on = state.powered.contains(&(gx, gy)) ||
+                                 (cell.tool == Tool::CoalPlant && cell.fuel > 0.0) ||
+                                 (cell.tool == Tool::Nuclear   && cell.fuel > 0.0);
+                        draw_building(wx, wy, ws, cell, on, cam.scale, time, &sector.grid, lx as i32, ly as i32);
+                    } else if gx == state.mouse.world_col && gy == state.mouse.world_row {
+                        draw_rectangle_lines(wx, wy, ws, ws, 2.0, WHITE);
                     }
                 }
             }
+            // 2. ITEMS - Merged into sector loop for cache locality
+            for item in &sector.items {
+                let rel_x = (item.x - cam.gx as f32) * CELL_SIZE - cam.ox;
+                let rel_y = (item.y - cam.gy as f32) * CELL_SIZE - cam.oy;
+                let draw_x = rel_x * cam.scale + sw / 2.0;
+                let draw_y = rel_y * cam.scale + sh / 2.0;
 
-            if t == Terrain::Wasteland {
-                draw_rectangle(wx, wy, ws, ws, Color::new(0.52, 0.80, 0.10, 0.4));
-            }
-        } else {
-            draw_rectangle(wx, wy, ws, ws, terrain_color(t, time));
-            match t {
-                Terrain::Iron | Terrain::Copper | Terrain::Coal | Terrain::Quartz | Terrain::Gold | Terrain::Uranium => {
-                    let h = match t { Terrain::Iron=>Color::new(0.58,0.64,0.70,0.8), Terrain::Copper=>Color::new(0.92,0.35,0.05,0.8),
-                        Terrain::Quartz=>Color::new(0.73,0.90,0.99,0.8), Terrain::Gold=>Color::new(0.99,0.94,0.27,0.8),
-                        Terrain::Uranium=>Color::new(0.29,0.87,0.50,0.8), _=>Color::new(0.20,0.25,0.33,0.8) };
-                    draw_circle(wx+ws*0.3,wy+ws*0.3,ws*0.08,h); draw_circle(wx+ws*0.7,wy+ws*0.65,ws*0.08,h); draw_circle(wx+ws*0.5,wy+ws*0.75,ws*0.06,h);
+                if draw_x >= -20.0 && draw_x <= sw + 20.0 && draw_y >= -20.0 && draw_y <= sh + 20.0 {
+                    let sz = CELL_SIZE * cam.scale * 0.35;
+                    let drawn = if let Some(ref texs) = state.textures {
+                        if let Some(tex) = texs.sprites.items.get(&item.item_type) {
+                            draw_texture_ex(tex, draw_x - sz/2.0, draw_y - sz/2.0, WHITE, DrawTextureParams {
+                                dest_size: Some(vec2(sz, sz)), ..Default::default()
+                            });
+                            true
+                        } else { false }
+                    } else { false };
+                    if !drawn {
+                        draw_rectangle(draw_x - sz/2.0, draw_y - sz/2.0, sz, sz, item.item_type.color());
+                    }
                 }
-                Terrain::Tree => { draw_rectangle(wx+ws*0.4,wy+ws*0.5,ws*0.2,ws*0.4,Color::new(0.47,0.21,0.04,1.0)); draw_circle(wx+ws*0.5,wy+ws*0.35,ws*0.3,Color::new(0.08,0.39,0.20,1.0)); }
-                Terrain::Wasteland => { draw_circle(wx+ws*0.5,wy+ws*0.5,ws*0.25,Color::new(0.52,0.80,0.10,0.5)); }
-                _ => {}
             }
         }
-    }}
-
-    // Buildings
-    for r in sr..er { for c in sc..ec {
-        let wx = c as f32 * CELL_SIZE * cam.scale + cam.x;
-        let wy = r as f32 * CELL_SIZE * cam.scale + cam.y;
-        let ws = CELL_SIZE * cam.scale;
-        let idx = r * GRID_SIZE + c;
-        // Removed grid lines as requested for better immersion
-        // draw_rectangle_lines(wx, wy, ws, ws, 1.0, Color::new(1.0,1.0,1.0,0.03));
-        let cell = match &state.grid[idx] { Some(c) => c, None => {
-            if c as i32 == state.mouse.world_col && r as i32 == state.mouse.world_row { draw_rectangle_lines(wx,wy,ws,ws,2.0,WHITE); }
-            continue;
-        }};
-        let has_power = state.powered.contains(&idx);
-        let is_broken = cell.health <= 0.0;
-        let on = has_power && !is_broken;
-
-        // Blueprint effect (transparency if under construction)
-        if cell.construction_progress < 100.0 {
-            // Draw a ghost version (simulated by low alpha)
-            // Note: Macroquad doesn't have a global alpha for all draw calls, 
-            // but we can pass a modified color to draw_building if we want.
-            // For now, let's just draw the rectangle/outline differently.
-            draw_rectangle_lines(wx, wy, ws, ws, 2.0, Color::new(1.0, 1.0, 1.0, 0.3));
-            draw_text(&format!("{:.0}%", cell.construction_progress), wx + 2.0, wy + 12.0 * cam.scale, 12.0 * cam.scale, WHITE);
-        } else {
-            draw_building(wx, wy, ws, cell, on, cam.scale, time);
-        }
-        // Processing bar
-        if matches!(cell.tool, Tool::Smelter|Tool::Press|Tool::Assembler|Tool::ChemPlant|Tool::Quantum|Tool::Centrifuge) && !is_broken && cell.processing > 0.0 {
-            let bc = match cell.tool { Tool::Quantum=>Color::new(0.85,0.71,0.99,1.0), Tool::Assembler|Tool::Centrifuge=>Color::new(0.20,0.83,0.60,1.0), _=>Color::new(0.94,0.27,0.27,1.0) };
-            draw_rectangle(wx+ws*0.1,wy+ws*0.88,ws*0.8*(cell.processing/100.0),ws*0.08,bc);
-        }
-        if is_broken { draw_rectangle(wx,wy,ws,ws,Color::new(0.0,0.0,0.0,0.6)); draw_text("X",wx+ws*0.3,wy+ws*0.65,22.0*cam.scale,RED); }
-        else if !has_power && !matches!(cell.tool, Tool::Warehouse|Tool::Node|Tool::Street|Tool::Solar|Tool::Wind|Tool::CoalPlant|Tool::Nuclear|Tool::Battery|Tool::Conveyor|Tool::Pipe) {
-            draw_circle(wx+ws*0.8,wy+ws*0.2,ws*0.12,RED); draw_text("!",wx+ws*0.74,wy+ws*0.27,12.0*cam.scale,WHITE);
-        }
-        if !is_broken && cell.health < 100.0 && cell.health > 0.0 {
-            let hc = if cell.health > 50.0 { Color::new(0.06,0.72,0.38,1.0) } else { RED };
-            draw_rectangle(wx+ws*0.1,wy+ws*0.92,ws*0.8*(cell.health/100.0),ws*0.05,hc);
-        }
-        if c as i32 == state.mouse.world_col && r as i32 == state.mouse.world_row { draw_rectangle_lines(wx,wy,ws,ws,2.0,WHITE); }
-    }}
+    }
 
     // --- PLAYERS ---
-    // Other players
     for (sender, pos) in &state.other_players {
-        draw_player(pos.x * cam.scale + cam.x, pos.y * cam.scale + cam.y, cam.scale, false, sender);
+        let rel_x = (pos.x - cam.gx as f32 * CELL_SIZE) - cam.ox;
+        let rel_y = (pos.y - cam.gy as f32 * CELL_SIZE) - cam.oy;
+        let wx = sw/2.0 + rel_x * cam.scale;
+        let wy = sh/2.0 + rel_y * cam.scale;
+        draw_player(wx, wy, cam.scale, false, sender);
     }
-    // Local player
-    draw_player(state.local_player.pos.x * cam.scale + cam.x, state.local_player.pos.y * cam.scale + cam.y, cam.scale, true, &state.username);
+    let local_rel_x = (state.local_player.pos.x - cam.gx as f32 * CELL_SIZE) - cam.ox;
+    let local_rel_y = (state.local_player.pos.y - cam.gy as f32 * CELL_SIZE) - cam.oy;
+    draw_player(sw/2.0 + local_rel_x * cam.scale, sh/2.0 + local_rel_y * cam.scale, cam.scale, true, &state.username);
 
     // --- NPCS ---
     for npc in &state.npcs {
-        let sx = npc.x * CELL_SIZE * cam.scale + cam.x;
-        let sy = npc.y * CELL_SIZE * cam.scale + cam.y;
-        draw_npc(sx, sy, cam.scale, &npc.name, &npc.state);
+        let rel_x = (npc.x - cam.gx as f32) * CELL_SIZE - cam.ox;
+        let rel_y = (npc.y - cam.gy as f32) * CELL_SIZE - cam.oy;
+        draw_npc(sw/2.0 + rel_x * cam.scale, sh/2.0 + rel_y * cam.scale, cam.scale, &npc.name, &npc.state);
     }
 
-    // Items
-    for item in &state.items {
-        let cx = item.x as i32; let cy = item.y as i32;
-        if cx < sc as i32 || cx >= ec as i32 || cy < sr as i32 || cy >= er as i32 { continue; }
-        if let Some(idx) = GameState::idx(cx, cy) {
-            if let Some(ref cell) = state.grid[idx] { if cell.tool == Tool::Conveyor {
-                let (dx,dy) = DIRS[cell.dir as usize];
-                let fx = cx as f32+0.5+dx as f32*(item.progress-0.5);
-                let fy = cy as f32+0.5+dy as f32*(item.progress-0.5);
-                let sx = fx*CELL_SIZE*cam.scale+cam.x; let sy = fy*CELL_SIZE*cam.scale+cam.y;
-                let sz = CELL_SIZE*0.35*cam.scale;
-                // Draw item sprite if available, else fall back to colored rectangle
-                let drawn = if let Some(ref texs) = state.textures {
-                    if let Some(tex) = texs.sprites.items.get(&item.item_type) {
-                        draw_texture_ex(tex, sx-sz/2.0, sy-sz/2.0, WHITE, DrawTextureParams {
-                            dest_size: Some(vec2(sz, sz)),
-                            ..Default::default()
-                        });
-                        true
-                    } else { false }
-                } else { false };
-                if !drawn {
-                    draw_rectangle(sx-sz/2.0, sy-sz/2.0, sz, sz, item.item_type.color());
-                }
-            }}
-        }
+    // --- POWER LINKS ---
+    for link in &state.global_power_links {
+        let rel_ux = (link.u.0 - cam.gx) as f32 * CELL_SIZE + CELL_SIZE/2.0 - cam.ox;
+        let rel_uy = (link.u.1 - cam.gy) as f32 * CELL_SIZE + CELL_SIZE/2.0 - cam.oy;
+        let rel_vx = (link.v.0 - cam.gx) as f32 * CELL_SIZE + CELL_SIZE/2.0 - cam.ox;
+        let rel_vy = (link.v.1 - cam.gy) as f32 * CELL_SIZE + CELL_SIZE/2.0 - cam.oy;
+        
+        let wx1 = sw/2.0 + rel_ux * cam.scale; let wy1 = sh/2.0 + rel_uy * cam.scale;
+        let wx2 = sw/2.0 + rel_vx * cam.scale; let wy2 = sh/2.0 + rel_vy * cam.scale;
+        
+        let alpha = 0.5 + (time as f32 / 200.0).sin() * 0.3;
+        draw_line(wx1, wy1, wx2, wy2, 2.0 * cam.scale, Color::new(0.22, 0.74, 0.97, alpha));
     }
 
-    // Power links (LAYER 4 — aerial, on top)
-    for link in &state.power_links {
-        let ux=(link.u%GRID_SIZE)as f32*CELL_SIZE+CELL_SIZE/2.0; let uy=(link.u/GRID_SIZE)as f32*CELL_SIZE+CELL_SIZE/2.0;
-        let vx=(link.v%GRID_SIZE)as f32*CELL_SIZE+CELL_SIZE/2.0; let vy=(link.v/GRID_SIZE)as f32*CELL_SIZE+CELL_SIZE/2.0;
-        let alpha = 0.5+(time/200.0).sin()as f32*0.3;
-        draw_line(ux*cam.scale+cam.x,uy*cam.scale+cam.y,vx*cam.scale+cam.x,vy*cam.scale+cam.y, 2.0, Color::new(0.22,0.74,0.97,alpha));
-    }
-
-    for &(cx,cy) in &state.other_cursors { draw_circle(cx,cy,5.0,Color::new(0.94,0.27,0.27,0.8)); }
-
-    // Night
+    // --- NIGHT ---
     let mut opacity = 0.0f32;
-    if state.time_of_day > 1800.0 { opacity = (state.time_of_day-1800.0)/600.0*0.7; }
-    else if state.time_of_day < 600.0 { opacity = (600.0-state.time_of_day)/600.0*0.7; }
-    if opacity > 0.0 { draw_rectangle(0.0,0.0,screen_width(),screen_height(),Color::new(0.01,0.02,0.04,opacity)); }
+    if state.time_of_day > 1800.0 { opacity = (state.time_of_day - 1800.0) / 600.0 * 0.7; }
+    else if state.time_of_day < 600.0 { opacity = (600.0 - state.time_of_day) / 600.0 * 0.7; }
+    if opacity > 0.0 { 
+        draw_rectangle(0.0, 0.0, sw, sh, Color::new(0.01, 0.02, 0.04, opacity));
+    }
 }
 
 // ============ UI — 100% OPAQUE, BIG TEXT ============
 pub fn render_ui(state: &GameState, hover_info: &Option<HoverInfo>, mouse_x: f32, mouse_y: f32) {
     let sw = screen_width(); let sh = screen_height();
-    // Premium Color Palette
-    let hud_bg = Color::new(0.02, 0.04, 0.08, 0.95);
-    let hud_bg2 = Color::new(0.05, 0.08, 0.15, 1.0);
-    let hud_border = Color::new(0.15, 0.65, 0.85, 0.6);
-    let text_dim = Color::new(0.6, 0.7, 0.8, 1.0);
-    let accent = Color::new(0.22, 0.74, 0.97, 1.0);
+    // Premium Color Palette - Updated to Gray for HUD
+    let hud_bg = Color::new(0.25, 0.25, 0.25, 0.95); // Gray background
+    let hud_bg2 = Color::new(0.35, 0.35, 0.35, 1.0); // Lighter gray for buttons
+    let hud_border = Color::new(0.6, 0.6, 0.6, 0.8); // Gray border
+    let text_dim = Color::new(0.9, 0.9, 0.9, 1.0);
+    let accent = Color::new(0.4, 0.8, 1.0, 1.0);
 
     // === TOP LEFT: Inventory ===
     let px = 10.0; let py = 10.0; let pw = 260.0;
     draw_rectangle(px, py, pw, 30.0, hud_bg);
     draw_rectangle_lines(px, py, pw, 30.0, 1.0, hud_border);
     draw_text("INVENTARIO", px+8.0, py+22.0, 24.0, Color::new(0.58,0.64,0.70,1.0));
-    let mut sorted: Vec<(&ItemType,&i32)> = state.inventory.iter().filter(|(_,v)|**v>0).collect();
-    sorted.sort_by(|a,b| b.1.cmp(a.1));
-    let inv_h = sorted.len().min(14) as f32 * 24.0 + 4.0;
+    let inventory = &state.inventory_cache;
+    let inv_h = inventory.len().min(14) as f32 * 24.0 + 4.0;
     draw_rectangle(px, py+30.0, pw, inv_h, hud_bg);
     draw_rectangle_lines(px, py+30.0, pw, inv_h, 1.0, hud_border);
-    for (i,(k,v)) in sorted.iter().take(14).enumerate() {
+    for (i,(k,v)) in inventory.iter().take(14).enumerate() {
         let iy = py+34.0+i as f32*24.0;
         draw_rectangle(px+6.0,iy+2.0,16.0,16.0,k.color());
         draw_text(k.name_pt(), px+26.0, iy+17.0, 18.0, Color::new(0.85,0.88,0.92,1.0));
@@ -461,18 +484,18 @@ pub fn render_ui(state: &GameState, hover_info: &Option<HoverInfo>, mouse_x: f32
     // Money display with subtle background
     draw_rectangle(rx+10.0, ry+35.0, rw-20.0, 32.0, Color::new(1.0,1.0,1.0,0.03));
     let mc = if state.money<0 { RED } else { Color::new(0.3, 0.95, 0.55, 1.0) };
-    draw_text(&format!("Saldo: ${}",state.money), rx+18.0, ry+58.0, 24.0, mc);
+    draw_text(&state.ui_money_str, rx+18.0, ry+58.0, 24.0, mc);
     
     let ic = if state.income>=0 { Color::new(0.3, 0.95, 0.55, 1.0) } else { RED };
-    draw_text(&format!("Fluxo: {}/tick",state.income), rx+12.0, ry+85.0, 18.0, ic);
+    draw_text(&state.ui_income_str, rx+12.0, ry+85.0, 18.0, ic);
     
     let hour = (state.time_of_day/100.0) as i32;
     draw_text(&format!("Horário: {:02}:00",hour), rx+12.0, ry+110.0, 18.0, text_dim);
     
     let pc = if state.power_gen>=state.power_cons { accent } else { RED };
-    draw_text(&format!("Energia: {}W / {}W",state.power_gen as i32,state.power_cons as i32), rx+12.0, ry+135.0, 18.0, pc);
+    draw_text(&format!("Energia: {}", state.ui_power_str), rx+12.0, ry+135.0, 18.0, pc);
     
-    draw_text(&format!("População: {} (Crise: {})",state.pop,state.unpowered), rx+12.0, ry+160.0, 18.0, text_dim);
+    draw_text(&state.ui_pop_str, rx+12.0, ry+160.0, 18.0, text_dim);
 
     if state.rival_event.is_none() {
         draw_text(&format!("Meta: {} ({}X)",state.demand.item.name_pt(),state.demand.multiplier), rx+12.0, ry+185.0, 18.0, Color::new(0.96,0.62,0.04,1.0));
@@ -512,54 +535,60 @@ pub fn render_ui(state: &GameState, hover_info: &Option<HoverInfo>, mouse_x: f32
     }
 
     // === BOTTOM: Tool palette ===
-    let bx = 10.0; let by = sh-230.0;
+    let bx = 10.0; let by = sh - 280.0; // Moved up to accommodate larger buttons
     for (ci,name) in CATEGORY_NAMES.iter().enumerate() {
         let tx = bx+ci as f32*104.0;
         let sel = ci == state.selected_category;
-        let bg = if sel { Color::new(0.14,0.18,0.26,1.0) } else { hud_bg };
+        let bg = if sel { Color::new(0.4, 0.4, 0.4, 1.0) } else { hud_bg };
         draw_rectangle(tx, by, 102.0, 30.0, bg);
-        draw_rectangle_lines(tx, by, 102.0, 30.0, 1.0, if sel { Color::new(0.22,0.74,0.97,1.0) } else { hud_border });
-        draw_text(name, tx+6.0, by+22.0, 16.0, if sel { Color::new(0.22,0.74,0.97,1.0) } else { Color::new(0.50,0.55,0.60,1.0) });
+        draw_rectangle_lines(tx, by, 102.0, 30.0, 1.0, if sel { accent } else { hud_border });
+        draw_text(name, tx+6.0, by+22.0, 16.0, if sel { accent } else { Color::new(0.8, 0.8, 0.8, 1.0) });
     }
     let tools: Vec<&Tool> = Tool::all().iter().filter(|t| t.category()==state.selected_category).collect();
     let rows_needed = (tools.len()+4)/5;
-    let palette_h = rows_needed as f32 * 62.0 + 4.0;
-    draw_rectangle(bx, by+30.0, 520.0, palette_h, hud_bg);
-    draw_rectangle_lines(bx, by+30.0, 520.0, palette_h, 1.0, hud_border);
+    let tw = 96.0; let th = 96.0; // 96x96 as requested
+    let palette_w = 5.0 * (tw + 4.0) + 4.0;
+    let palette_h = rows_needed as f32 * (th + 4.0) + 4.0;
+    
+    draw_rectangle(bx, by+30.0, palette_w, palette_h.min(sh - by - 40.0), hud_bg);
+    draw_rectangle_lines(bx, by+30.0, palette_w, palette_h.min(sh - by - 40.0), 1.0, hud_border);
     for (ti,tool) in tools.iter().enumerate() {
         let col = ti%5; let row = ti/5;
-        let tw = 100.0; let th = 58.0;
         let tx = bx+4.0+col as f32*(tw+4.0);
         let ty = by+34.0+row as f32*(th+4.0);
         let sel = state.selected_tool == **tool;
-        draw_rectangle(tx, ty, tw, th, if sel { Color::new(0.18,0.22,0.32,1.0) } else { hud_bg2 });
-        draw_rectangle_lines(tx, ty, tw, th, if sel { 2.0 } else { 1.0 }, if sel { Color::new(0.22,0.74,0.97,1.0) } else { hud_border });
-        draw_text(tool.hotkey(), tx+4.0, ty+16.0, 14.0, Color::new(0.58,0.64,0.70,1.0));
-        // Draw HUD sprite if available, else show text name
-        let sprite_drawn = if let Some(ref texs) = state.textures {
+        draw_rectangle(tx, ty, tw, th, if sel { Color::new(0.45, 0.45, 0.45, 1.0) } else { hud_bg2 });
+        draw_rectangle_lines(tx, ty, tw, th, if sel { 2.0 } else { 1.0 }, if sel { accent } else { hud_border });
+        
+        // Redesigned HUD: Full-sized sprite (96x96 area)
+        if let Some(ref texs) = state.textures {
             if let Some(sprite) = texs.sprites.hud.get(tool) {
-                // Draw sprite: centered horizontally, below the hotkey label
-                let spad = 4.0;
-                let avail_w = tw - spad * 2.0;
-                let avail_h = th - 20.0 - spad; // below hotkey text
-                let sprite_size = avail_w.min(avail_h);
-                let sx = tx + (tw - sprite_size) / 2.0;
-                let sy = ty + 18.0;
-                draw_texture_ex(sprite, sx, sy, WHITE, DrawTextureParams {
-                    dest_size: Some(vec2(sprite_size, sprite_size)),
+                draw_texture_ex(sprite, tx, ty, WHITE, DrawTextureParams {
+                    dest_size: Some(vec2(tw, th)),
                     ..Default::default()
                 });
-                true
-            } else { false }
-        } else { false };
-        if !sprite_drawn {
-            draw_text(tool.name_pt(), tx+4.0, ty+34.0, 16.0, if sel { Color::new(0.22,0.74,0.97,1.0) } else { WHITE });
+            } else {
+                draw_text(tool.name_pt(), tx + 4.0, ty + 30.0, 16.0, if sel { accent } else { WHITE });
+            }
         }
+
+        // Bottom overlay for Name and Price
+        let overlay_h = 16.0;
+        draw_rectangle(tx + 1.0, ty + th - overlay_h - 1.0, tw - 2.0, overlay_h, Color::new(0.0, 0.0, 0.0, 0.6));
+        draw_text(tool.name_pt(), tx + 4.0, ty + th - 4.0, 12.0, if sel { accent } else { WHITE });
+        if !matches!(tool, Tool::Eraser | Tool::Repair) {
+            let cost_str = format!("${}", tool.cost());
+            let cost_w = cost_str.len() as f32 * 6.5;
+            draw_text(&cost_str, tx + tw - cost_w - 4.0, ty + th - 4.0, 11.0, Color::new(0.94, 0.27, 0.27, 1.0));
+        }
+
+        // Hotkey in top-left corner
+        draw_rectangle(tx + 1.0, ty + 1.0, 14.0, 14.0, Color::new(0.0, 0.0, 0.0, 0.7));
+        draw_text(tool.hotkey(), tx + 4.0, ty + 12.0, 13.0, Color::new(0.8, 0.8, 0.9, 1.0));
+
         if sel {
-            // Highlight border glow when selected and sprite shown
-            draw_rectangle_lines(tx+1.0, ty+1.0, tw-2.0, th-2.0, 1.0, Color::new(0.22,0.74,0.97,0.4));
+            draw_rectangle_lines(tx, ty, tw, th, 2.0, accent);
         }
-        if !matches!(tool, Tool::Eraser|Tool::Repair) { draw_text(&format!("-${}",tool.cost()), tx+4.0, ty+52.0, 14.0, Color::new(0.94,0.27,0.27,0.9)); }
     }
 
     // === TOOLTIP ===
@@ -616,39 +645,42 @@ pub fn render_ui(state: &GameState, hover_info: &Option<HoverInfo>, mouse_x: f32
         let text_col = Color::new(0.88, 0.90, 0.95, 1.0);
         let warn_col = Color::new(0.97, 0.82, 0.17, 1.0);
         let good_col = Color::new(0.29, 0.87, 0.50, 1.0);
-
         match state.help_tab {
             0 => { // CONSTRUCOES
-                let entries: &[(&str, &str)] = &[
-                    ("ESTEIRA [1]",        "Transporta itens entre maquinas. Clique p/ girar a direcao."),
-                    ("TUBO [2]",           "Transporta fluidos (Agua, Petroleo). Conecte Bomba -> Quimica."),
-                    ("POSTE [3]",          "Distribui energia eletrica num raio de 3 celulas."),
-                    ("RUA [4]",            "Permite que o jogador caminhe sobre agua. Protege de NPCs."),
-                    ("ARMAZEM [5]",        "Coleta itens das esteiras. Adiciona ao seu inventario."),
-                    ("REPARO [6]",         "Clique numa maquina quebrada p/ reparar (custa 50% do valor)."),
-                    ("MINERADOR [Q]",      "Extrai minerio do terreno. Coloque sobre: Fe, Cu, Carvao, etc."),
-                    ("BOMBA [T]",          "Extrai AGUA de celulas de agua. Conecte a tubos."),
-                    ("EXTRATOR [E]",       "Extrai PETROLEO de celulas de oleo. Conecte a tubos."),
-                    ("LENHADOR [R]",       "Corta arvores e ejecta MADEIRA em esteiras adjacentes."),
-                    ("SOLAR [Y]",          "Gera 40W de dia. Zero energia a noite."),
-                    ("EOLICA [U]",         "Gera 60W * vento local. Variavel."),
-                    ("TERMOELETRICA [I]",  "Gera 300W. Alimenta com Carvao via esteira."),
-                    ("NUCLEAR [F]",        ">LEIA A GUIA ENERGIA< Gera 2500W. Precisa de agua+uranio."),
-                    ("BATERIA [G]",        "Armazena energia excedente. Carrega automaticamente."),
-                    ("FUNDICAO [Z]",       "Converte minerio em chapas. Ex: Fe-Ore -> Chapa Ferro."),
-                    ("PRENSA [X]",         "Converte Chapa Cobre -> Fio Cobre."),
-                    ("MONTADORA [C]",      "Combina itens. Fe+Carvao->Aco, Vidro+Fio->Proc, Si+Fio->Placa."),
-                    ("QUIMICA [V]",        "Agua + Petroleo -> Plastico. Precisa de tubos conectados."),
-                    ("CENTRIFUGA [B]",     "3x Uranio -> Celula Uranio. Precisa de 3+ minerio acumulado."),
-                    ("QUANTICO [N]",       "Proc + Plastico + Ouro -> Nucleo IA. Raro e caro."),
-                    ("MERCADO [M]",        "Vende itens que chegam por esteira. Preco varia pelo mercado."),
-                    ("CASA [H]",           "Adiciona populacao. Cada casa consome 5W. Gera renda +15/tick."),
+                let entries: &[(&str, &str, &str)] = &[
+                    ("1", "ESTEIRA",        "Transporta itens entre máquinas. Clique p/ girar."),
+                    ("2", "TUBO",           "Transporta fluidos. Conecte Bomba -> Química."),
+                    ("3", "POSTE",          "Distribui energia elétrica num raio de 3 células."),
+                    ("4", "RUA",            "Permite caminhar sobre água. Protege de NPCs."),
+                    ("5", "ARMAZÉM",        "Coleta itens das esteiras para o inventário."),
+                    ("6", "REPARO",         "Clique p/ reparar máquinas (custa 50% do valor)."),
+                    ("Q", "MINERADOR",      "Extrai minério. Coloque sobre: Ferro, Cobre, etc."),
+                    ("T", "BOMBA",          "Extrai ÁGUA de células de água."),
+                    ("E", "EXTRATOR",       "Extrai PETRÓLEO de células de óleo."),
+                    ("R", "LENHADOR",       "Corta árvores e ejeta MADEIRA adjacente."),
+                    ("Y", "SOLAR",          "Gera 40W de dia. Zero energia à noite."),
+                    ("U", "EOLICA",         "Gera 60W * vento local (variável)."),
+                    ("I", "TERMELÉTRICA",   "Gera 300W. Consome CARVÃO via esteira."),
+                    ("F", "NUCLEAR",        "Gera 2500W. Precisa de ÁGUA + URÂNIO."),
+                    ("G", "BATERIA",        "Armazena energia excedente para emergências."),
+                    ("Z", "FUNDIÇÃO",       "Converte minério em chapas (ex: Fe-Ore -> Fe)."),
+                    ("X", "PRENSA",         "Converte chapa de cobre em fio de cobre."),
+                    ("C", "MONTADORA",      "Combina itens. Ex: Vidro+Fio -> Processador."),
+                    ("V", "QUÍMICA",        "Água + Petróleo -> Plástico. Precisa de tubos."),
+                    ("B", "CENTRÍFUGA",     "Processa URÂNIO para combustível nuclear."),
+                    ("N", "QUÂNTICO",       "Produz NÚCLEO IA. Equipamento avançado."),
+                    ("M", "MERCADO",        "Vende itens e gera renda. Preços variam."),
+                    ("H", "CASA",           "Adiciona população. Gera $15/tick e consome 5W."),
                 ];
-                for (i, (name, desc)) in entries.iter().enumerate() {
+                for (i, (key, name, desc)) in entries.iter().enumerate() {
                     let y = cy + i as f32 * line_h;
                     if y > hy + hh - 30.0 { break; }
-                    draw_text(name, cx, y, 15.0, title_col);
-                    draw_text(desc, cx + 170.0, y, 14.0, text_col);
+                    let bg_alpha = if i % 2 == 0 { 0.05 } else { 0.0 };
+                    draw_rectangle(hx + 10.0, y - 16.0, hw - 20.0, 20.0, Color::new(1.0, 1.0, 1.0, bg_alpha));
+                    
+                    draw_text(&format!("[{}]", key), cx, y, 14.0, warn_col);
+                    draw_text(name, cx + 35.0, y, 15.0, title_col);
+                    draw_text(desc, cx + 180.0, y, 14.0, text_col);
                 }
             }
             1 => { // RECEITAS
@@ -670,77 +702,68 @@ pub fn render_ui(state: &GameState, hover_info: &Option<HoverInfo>, mouse_x: f32
                     ("Energia 300W",   "Carvao (na esteira)",          "Termoeletrica"),
                     ("Energia 2500W",  "Cel. Uranio + Agua (tubos)",   "Nuclear"),
                 ];
-                draw_rectangle(cx, cy - 5.0, 696.0, 22.0, Color::new(0.10, 0.15, 0.25, 1.0));
-                draw_text("PRODUTO", cx + 4.0, cy + 13.0, 15.0, title_col);
-                draw_text("INGREDIENTES", cx + 210.0, cy + 13.0, 15.0, title_col);
-                draw_text("MAQUINA", cx + 520.0, cy + 13.0, 15.0, title_col);
+                draw_rectangle(cx, cy - 5.0, 696.0, 25.0, Color::new(0.22, 0.74, 0.97, 0.2));
+                draw_text("PRODUTO", cx + 8.0, cy + 14.0, 16.0, title_col);
+                draw_text("INGREDIENTES", cx + 210.0, cy + 14.0, 16.0, title_col);
+                draw_text("MÁQUINA", cx + 520.0, cy + 14.0, 16.0, title_col);
                 for (i, (out, ing, machine)) in recipes.iter().enumerate() {
-                    let y = cy + 26.0 + i as f32 * 25.0;
+                    let y = cy + 28.0 + i as f32 * 26.0;
                     if y > hy + hh - 30.0 { break; }
-                    let bg = if i % 2 == 0 { Color::new(0.07, 0.10, 0.17, 1.0) } else { Color::new(0.05, 0.07, 0.13, 1.0) };
-                    draw_rectangle(cx, y - 16.0, 696.0, 22.0, bg);
-                    draw_text(out, cx + 4.0, y, 14.0, good_col);
+                    let bg = if i % 2 == 0 { Color::new(1.0, 1.0, 1.0, 0.05) } else { Color::new(0.0, 0.0, 0.0, 0.0) };
+                    draw_rectangle(cx, y - 18.0, 696.0, 24.0, bg);
+                    draw_text(out, cx + 8.0, y, 14.0, good_col);
                     draw_text(ing, cx + 210.0, y, 14.0, text_col);
                     draw_text(machine, cx + 520.0, y, 14.0, warn_col);
                 }
             }
             2 => { // CADEIAS PRODUTIVAS
                 let chains: &[(&str, &[&str])] = &[
-                    ("CADEIA BASICA - FERRO",     &["Mapa: Terreno FERRO (marrom)", "Minerador (Q) -> Esteira (1) -> Fundicao (Z)", "Fundicao faz: Chapa Ferro", "Chapa Ferro -> Montadora (C) para fazer Aco (precisa Carvao tb)", "Aco -> Mercado (M) para vender"]),
-                    ("CADEIA ELETRICA",           &["Mapa: Terreno COBRE (laranja)", "Minerador -> Fundicao -> Chapa Cobre", "Prensa (X) transforma Chapa Cobre em Fio Cobre", "Fio + Vidro (areia/fundicao) -> Montadora = PROCESSADOR (caro!)"]),
-                    ("CADEIA ENERGIA BASICA",     &["Instale POSTES para conectar maquinas", "SOLAR (Y): funciona de dia gratis", "EOLICA (U): funciona sempre, varia com vento", "TERMOELETRICA (I): 300W mas precisa Carvao na esteira"]),
-                    ("CADEIA NUCLEAR (AVANCADA)", &["1. Instale NUCLEAR (F) numa posicao livre", "2. Instale BOMBA (T) em celula de AGUA proxima", "3. Conecte TUBOS (2) da Bomba ao Nuclear", "4. Instale CENTRIFUGA (B) em Uranio do mapa", "5. Esteira: Centrifuga -> Nuclear (cel. uranio)", "6. Poste (N) p/ conectar na rede. Pronto: 2500W!"]),
-                    ("CADEIA QUIMICA",            &["1. Instale EXTRATOR (E) em celula de PETROLEO", "2. Instale BOMBA (T) em celula de AGUA", "3. Conecte ambos com TUBOS (2) a QUIMICA (V)", "4. Quimica produz PLASTICO automaticamente", "5. Plastico + Processador + Ouro -> Nucleo IA (montedera)"]),
+                    ("CADEIA BÁSICA - FERRO",     &["• Mapa: Terreno FERRO (cinza)", "• Minerador (Q) -> Esteira (1) -> Fundição (Z)", "• Fundição produz: Chapa Ferro", "• Chapa Ferro -> Montadora (C) para fazer Aço (+Carvão)", "• Aço -> Mercado (M) para vender"]),
+                    ("CADEIA ELÉTRICA",           &["• Mapa: Terreno COBRE (laranja)", "• Minerador -> Fundição -> Chapa Cobre", "• Prensa (X) transforma Chapa em Fio de Cobre", "• Fio + Vidro (areia/fundição) -> Montadora = PROCESSADOR"]),
+                    ("CADEIA QUÍMICA",            &["• Instale Extrator (E) em PETRÓLEO e Bomba (T) em ÁGUA", "• Conecte ambos com TUBOS (2) à QUÍMICA (V)", "• A Química produz PLÁSTICO automaticamente", "• Plástico + Processador + Ouro -> NÚCLEO IA (Montadora)"]),
+                    ("NUCLEAR (AVANÇADO)",        &["• Instale NUCLEAR (F) e conecte ÁGUA via tubos", "• CENTRÍFUGA (B) sobre URÂNIO produz Cél. Urânio", "• Leve as células via esteira até o Reator Nuclear", "• CUIDADO: Sem água o reator causará um Meltdown!"]),
                 ];
                 for (ci, (chain_name, steps)) in chains.iter().enumerate() {
-                    let section_y = cy + ci as f32 * 105.0;
+                    let section_y = cy + ci as f32 * 115.0;
                     if section_y > hy + hh - 30.0 { break; }
-                    draw_rectangle(cx, section_y - 5.0, 696.0, 18.0, Color::new(0.15, 0.20, 0.30, 1.0));
-                    draw_text(chain_name, cx + 4.0, section_y + 10.0, 15.0, title_col);
+                    draw_rectangle(cx, section_y - 5.0, 696.0, 20.0, Color::new(0.22, 0.74, 0.97, 0.15));
+                    draw_text(chain_name, cx + 8.0, section_y + 11.0, 16.0, title_col);
                     for (si, step) in steps.iter().enumerate() {
-                        let sy = section_y + 15.0 + si as f32 * 18.0;
-                        if sy > hy + hh - 30.0 { break; }
-                        draw_text(&format!("  {}", step), cx, sy, 14.0, text_col);
+                        let sy = section_y + 18.0 + si as f32 * 18.0;
+                        draw_text(step, cx + 15.0, sy, 14.0, text_col);
                     }
                 }
             }
             3 => { // ENERGIA & REATOR
                 let lines: &[(&str, bool)] = &[
-                    ("SISTEMA DE ENERGIA", true),
-                    ("Maquinas precisam de eletricidade. Sem energia -> simbolo ! vermelho.", false),
-                    ("Use POSTES (3) para conectar geradores a maquinas (raio 3 celulas).", false),
-                    ("Tipos de geradores:", true),
-                    ("  SOLAR (Y): 40W, gratis, so de dia (06h-18h). Ideal para inicio.", false),
-                    ("  EOLICA (U): 60W * fator vento. Variavel mas constante.", false),
-                    ("  TERMOELETRICA (I): 300W, precisa Carvao na esteira adjacente.", false),
-                    ("  NUCLEAR (F): 2500W. A mais poderosa. Veja guia abaixo.", false),
-                    ("  BATERIA (G): Armazena excesso de energia. Descarrega quando falta.", false),
+                    ("SISTEMA DE DISTRIBUIÇÃO", true),
+                    ("Máquinas precisam de postes (3) para receber energia (raio 3).", false),
+                    ("Sem energia, a máquina mostrará um símbolo de '!' vermelho.", false),
                     ("", false),
-                    ("COMO OPERAR O REATOR NUCLEAR", true),
-                    ("!!! PERIGO: Sem agua, o reator esquenta e causa MELTDOWN (destroi area) !!!", false),
-                    ("Passo 1: Construa o NUCLEAR (F) em qualquer terreno livre.", false),
-                    ("Passo 2: Encontre celulas de AGUA no mapa. Instale BOMBA (T) nelas.", false),
-                    ("Passo 3: Conecte TUBOS (2) da Bomba ate o Nuclear. Devem ser adjacentes.", false),
-                    ("Passo 4: Instale CENTRIFUGA (B) sobre terreno de URANIO.", false),
-                    ("Passo 5: Esteira leva Cel. Uranio da Centrifuga para o Nuclear.", false),
-                    ("Passo 6: Instale POSTES (3) para distribuir os 2500W na rede.", false),
-                    ("         Monitore o CALOR no tooltip (hover). Nunca deve passar 75%!", false),
+                    ("FONTES DE GERAÇÃO", true),
+                    ("• SOLAR (Y): 40W. Grátis, mas só funciona das 06h às 18h.", false),
+                    ("• EÓLICA (U): 60W * fator vento. Variável, mas 24h.", false),
+                    ("• TERMELÉTRICA (I): 300W. Precisa de Carvão na esteira.", false),
+                    ("• NUCLEAR (F): 2500W. Água + Cél. Urânio. Alta complexidade.", false),
+                    ("• BATERIA (G): Armazena excessos para uso posterior.", false),
                     ("", false),
-                    ("DICAS DE EFICIENCIA", true),
-                    ("  - Baterias garantem energia noturna para paineis solares.", false),
-                    ("  - Uma nuclear alimenta ~40 maquinas pesadas simultaneamente.", false),
-                    ("  - Nuclear + Bateria = combinacao ideal para producao 24h.", false),
+                    ("PROTOCOLO NUCLEAR", true),
+                    ("!!! PERIGO: Sem água, o reator derreterá em um MELTDOWN !!!", false),
+                    ("1. Instale o Reator (F) em local seco.", false),
+                    ("2. Conecte Bomba de ÁGUA (T) via Tubos diretamente ao Reator.", false),
+                    ("3. Abasteça com Células de Urânio vindas da Centrífuga (B).", false),
+                    ("4. Use Postes para injetar os 2500W na sua rede industrial.", false),
                 ];
                 for (i, (line, is_title)) in lines.iter().enumerate() {
-                    let y = cy + i as f32 * 21.0;
+                    let y = cy + i as f32 * 22.0;
                     if y > hy + hh - 25.0 { break; }
                     if *is_title {
-                        draw_rectangle(cx, y - 14.0, 696.0, 18.0, Color::new(0.12, 0.18, 0.28, 1.0));
-                        draw_text(line, cx + 4.0, y, 15.0, title_col);
+                        draw_rectangle(cx, y - 15.0, 696.0, 20.0, Color::new(0.22, 0.74, 0.97, 0.15));
+                        draw_text(line, cx + 8.0, y, 15.0, title_col);
                     } else if line.starts_with("!!!") {
                         draw_text(line, cx, y, 14.0, Color::new(0.97, 0.27, 0.27, 1.0));
                     } else {
-                        draw_text(line, cx, y, 14.0, text_col);
+                        draw_text(line, cx + 15.0, y, 14.0, text_col);
                     }
                 }
             }
@@ -753,16 +776,34 @@ pub fn render_ui(state: &GameState, hover_info: &Option<HoverInfo>, mouse_x: f32
 pub struct HoverInfo { pub title: String, pub health: Option<f32>, pub wind: i32, pub fuel: Option<f32>, pub heat: Option<f32>, pub charge: Option<f32> }
 
 pub fn get_hover_info(state: &GameState) -> Option<HoverInfo> {
-    let col = state.mouse.world_col; let row = state.mouse.world_row;
-    if col<0||row<0||col>=GRID_SIZE as i32||row>=GRID_SIZE as i32 { return None; }
-    let idx = row as usize*GRID_SIZE+col as usize;
-    let wind = (state.wind_map[idx]*100.0) as i32;
-    if let Some(ref cell) = state.grid[idx] {
-        Some(HoverInfo { title: cell.tool.name_pt().to_string(), health: Some(cell.health), wind,
-            fuel: if matches!(cell.tool, Tool::CoalPlant|Tool::Nuclear){Some(cell.fuel)}else{None},
-            heat: if cell.tool==Tool::Nuclear{Some(cell.heat)}else{None},
-            charge: if cell.tool==Tool::Battery{Some(cell.charge)}else{None} })
+    let gx = state.mouse.world_col;
+    let gy = state.mouse.world_row;
+    
+    let cell = state.get_cell_at(gx, gy);
+    let terrain = state.get_terrain_at(gx, gy);
+    
+    let ((sx, sy), (lx, ly)) = GameState::world_to_sector(gx, gy);
+    let wind = if let Some(s) = state.get_sector(sx, sy) {
+        (s.wind_map[ly as usize * SECTOR_SIZE + lx as usize] * 100.0) as i32
+    } else { 0 };
+
+    if let Some(c) = cell {
+        Some(HoverInfo {
+            title: c.tool.name_pt().to_string(),
+            health: Some(c.health),
+            wind,
+            fuel: if matches!(c.tool, Tool::CoalPlant | Tool::Nuclear) { Some(c.fuel) } else { None },
+            heat: if c.tool == Tool::Nuclear { Some(c.heat) } else { None },
+            charge: if c.tool == Tool::Battery { Some(c.charge) } else { None },
+        })
     } else {
-        Some(HoverInfo { title: state.terrain[idx].name_pt().to_string(), health:None, wind, fuel:None, heat:None, charge:None })
+        Some(HoverInfo {
+            title: terrain.name_pt().to_string(),
+            health: None,
+            wind,
+            fuel: None,
+            heat: None,
+            charge: None,
+        })
     }
 }
